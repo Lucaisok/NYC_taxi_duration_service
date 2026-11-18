@@ -11,6 +11,7 @@ from src.config import (
     MLFLOW_EXPERIMENT_NAME,
     MLFLOW_MODEL_NAME,
     MLFLOW_TRACKING_URI,
+    MODEL_ALIAS,
     MODEL_PARAMS,
     ModelName,
 )
@@ -25,14 +26,14 @@ def promote_if_better(version: int | None, rmse: float) -> None:
     client = MlflowClient()
     champion_rmse = float("inf")  # no champion yet -> always promote
     try:
-        champion = client.get_model_version_by_alias(MLFLOW_MODEL_NAME, "champion")
+        champion = client.get_model_version_by_alias(MLFLOW_MODEL_NAME, MODEL_ALIAS)
         if champion.run_id is not None:  # versions can exist without a run
             champion_rmse = client.get_run(champion.run_id).data.metrics["rmse"]
     except MlflowException:
         pass
 
     if rmse < champion_rmse:
-        client.set_registered_model_alias(MLFLOW_MODEL_NAME, "champion", str(version))
+        client.set_registered_model_alias(MLFLOW_MODEL_NAME, MODEL_ALIAS, str(version))
         print(f"Promoted v{version} (rmse {rmse:.3f} < {champion_rmse:.3f})")
 
 
@@ -46,7 +47,7 @@ def main(model_name: ModelName):
     X_train, X_test, y_train, y_test = split_data(filtered_df)
     model_pipeline = build_pipeline(model_name)
 
-    with mlflow.start_run(run_name=f"{model_name} run") as run:
+    with mlflow.start_run(run_name=f"{model_name} run"):
         mlflow.log_param("model_type", model_name)
         mlflow.log_params(MODEL_PARAMS[model_name])
         mlflow.log_param("duration_min", DURATION_RANGE[0])

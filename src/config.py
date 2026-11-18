@@ -38,5 +38,6 @@ MODEL_PARAMS = {
 }
 
 MLFLOW_MODEL_NAME = "NYC_taxi_model"
+MODEL_ALIAS = "champion"
 MLFLOW_EXPERIMENT_NAME = "NYC_taxi_duration"
 MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "http://127.0.0.1:5001")
