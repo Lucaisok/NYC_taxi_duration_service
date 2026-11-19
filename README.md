@@ -1,143 +1,138 @@
-# Model Deployment Project
+# NYC Taxi Trip Duration Service
 
-Use this repository as a **template** for your model deployment project. You will train a regression model that predicts the duration of NYC Yellow Taxi trips, track your experiments locally with MLflow, and serve predictions through a FastAPI app on your own machine. Create pull requests in your own copy even if you are working alone, and use them to track your progress.
+Predicts how long a NYC Yellow Taxi trip will take (in minutes) from information known **at pickup time**: pickup zone, drop-off zone and pickup datetime.
 
-## Learning Objectives
-
-By the end of this repository, you should be able to:
-
-- Build an end-to-end regression workflow for real-world taxi trip data.
-- Separate exploration, preprocessing, training, and serving concerns into maintainable code.
-- Track experiments locally with MLflow and compare model runs.
-- Serve model predictions through a local API.
-
-## Learning Path
+The model is trained on the [January 2025 Yellow Taxi data](https://www1.nyc.gov/site/tlc/about/tlc-trip-record-data.page), tracked and versioned in MLflow, and served through a FastAPI app.
 
 ```mermaid
 flowchart LR
-    A["Download<br>Yellow Taxi data"] --> B["Explore and clean<br>features"]
-    B --> C["Train Random Forest<br>Regressor"]
-    C --> D["Track runs<br>in MLflow"]
-    D --> E["Package preprocessing<br>and model"]
-    E --> F["Serve predictions<br>with FastAPI"]
-    F --> G["Send local<br>test request"]
+    A["Download<br>Jan 2025 data"] --> B["Validate &<br>clean"]
+    B --> C["Train pipeline<br>(src/train.py)"]
+    C --> D["MLflow run +<br>model registry"]
+    D -->|"champion alias"| E["FastAPI<br>(app/api.py)"]
+    E --> F["curl / requests"]
 ```
 
-| File / Folder | Description |
-|---|---|
-| [**Project Description**](project-description.md) | The assignment tasks, suggested workflow, repository layout, and stretch goals. |
+## Project Structure
 
-### Additional Folders and Files
-
-| File / Folder | Description |
+| Path | Description |
 |---|---|
-| [**pyproject.toml**](pyproject.toml) | Project configuration and dependencies. |
-| [**uv.lock**](uv.lock) | Dependency lock file. |
+| [notebooks/eda.ipynb](notebooks/eda.ipynb) | EDA, feature exploration, model comparison and hyperparameter tuning |
+| [src/config.py](src/config.py) | Features, target range, model hyperparameters, MLflow settings |
+| [src/load_data.py](src/load_data.py) | Downloads the parquet file (if missing) and validates it with a pandera schema |
+| [src/preprocess.py](src/preprocess.py) | Builds the `duration` target, removes outliers, train/test split |
+| [src/features.py](src/features.py) | Feature engineering (hour, day of week, weekend flag, pickup→drop-off route) |
+| [src/pipeline.py](src/pipeline.py) | scikit-learn pipeline: features → target encoding → model |
+| [src/train.py](src/train.py) | Trains a model, logs it to MLflow, promotes it to `champion` if it beats the current one |
+| [src/predict.py](src/predict.py) | Loads the champion model from the registry and makes predictions (shared with the API) |
+| [src/schemas.py](src/schemas.py) | Data schema for the raw file and request/response schemas for the API |
+| [app/api.py](app/api.py) | FastAPI app; loads the model once at startup |
+| [tests/](tests/) | Tests for feature engineering, preprocessing and the API |
+| [sample-request.json](sample-request.json) | Example body for the `/predict` endpoint |
 
 ## Setup
 
-Use [uv](https://docs.astral.sh/uv/getting-started/installation/) 0.13.5 or newer
-and Python 3.13.17 or a newer 3.13 patch release, as defined in
-[`.python-version`](.python-version).
-
-> [!NOTE]
-> Throughout these steps, text in angle brackets like `<repo-name>` is a **placeholder**. Replace it, including the `< >` brackets, with your own value. For example, `cd <repo-name>` becomes `cd mle-model-deployment-project`.
-
-### 1. Create the Repository from the Template
-
-Click **Use this template** on GitHub.
-
-When creating the repository:
-
-- Set yourself as the **Owner**
-- Choose a repository name
-- Disable **Include all branches**
-- Click **Create repository**
-
-> [!IMPORTANT]
-> If you are working in pairs or groups, only **one person** should complete this step.
-
----
-
-### 2. Add Collaborators (Pairs/Groups Only)
-
-If working with teammates:
-
-1. Open the repository on GitHub
-2. Go to **Settings → Collaborators**
-3. Add your teammates as collaborators
-4. Share the repository link with your team
-
-Teammates should accept the invitation before continuing.
-
----
-
-### 3. Clone the Repository
-
-Copy the SSH URL from the **Code** button on GitHub, then run:
+Requires [uv](https://docs.astral.sh/uv/getting-started/installation/) and Python 3.13 (see [`.python-version`](.python-version)).
 
 ```bash
-git clone <copied-ssh-url>
-```
-
-The copied SSH URL will look like `git@github.com:<your-username>/<repo-name>.git`.
-
----
-
-### 4. Move into the Project Folder and Install Dependencies
-
-This installs all dependencies and creates a virtual environment in `.venv/`.
-
-```bash
-cd <repo-name>
 uv sync
 ```
 
----
+## How to Run
 
-### 5. Open the Repository in VS Code
+All commands are run from the project root.
 
-> [!NOTE]
-> Make sure you open VS Code from the project root so it automatically detects the environment created by `uv sync`.
-
-Launch VS Code in the project root folder:
+### 1. Start the MLflow server
 
 ```bash
-code .
+uv run mlflow server --backend-store-uri sqlite:///mlflow.db --port 5001
 ```
 
-If you create a notebook to explore the data, select the Python environment created by `uv sync` as the kernel.
+The UI is available at <http://127.0.0.1:5001>. Keep this terminal open: both training and the API talk to this server.
+To use another address, set the `MLFLOW_TRACKING_URI` environment variable.
 
-## How to Use This Repo
+### 2. Train a model
 
-1. Read the assignment brief in [project-description.md](project-description.md).
-2. Download and inspect the January 2025 Yellow Taxi dataset.
-3. Train a baseline `RandomForestRegressor` and track runs locally with MLflow.
-4. Refactor preprocessing and training logic into reusable Python modules.
-5. Build a local prediction API with FastAPI.
-6. Send a test request to the API and document the outcome in your README or PR.
+```bash
+uv run python -m src.train --model hgb      # options: linear, forest, hgb
+```
 
-### Working Locally
+The data is downloaded to `data/` on the first run. Each run logs parameters, the RMSE and the model to MLflow and registers a new version of `NYC_taxi_model`. If its RMSE is lower than the current champion's, the `champion` alias moves to the new version.
 
-Once you have implemented the project code, a typical local workflow looks like this:
+### 3. Start the API
 
-1. Train the model and log runs to the local `mlruns/` directory with MLflow.
-2. Start the tracking UI:
+```bash
+uv run uvicorn app.api:app --reload --port 8000
+```
 
-   ```bash
-   uv run mlflow ui --backend-store-uri ./mlruns --port 5000
-   ```
+At startup the API loads the model that the `champion` alias points to. Interactive docs are at <http://127.0.0.1:8000/docs>.
 
-3. Run the API locally:
+### 4. Send a request
 
-   ```bash
-   uv run uvicorn app.main:app --reload --port 8000
-   ```
+```bash
+curl -X POST http://127.0.0.1:8000/predict \
+  -H "Content-Type: application/json" \
+  -d @sample-request.json
+```
 
-4. Send a request to the API:
+Response:
 
-   ```bash
-   curl -X POST http://127.0.0.1:8000/predict -H "Content-Type: application/json" -d @sample-request.json
-   ```
+```json
+{"duration": "15 minutes"}
+```
 
-The `app/` package and `sample-request.json` are files you create during the project. Make the sample request match your `/predict` input schema before running the commands above.
+Invalid input (e.g. `"tpep_pickup_datetime": "not-a-date"` or a missing field) returns a `422` error.
+
+### 5. Run the tests
+
+```bash
+uv run pytest
+```
+
+The API tests replace the MLflow model with a dummy model, so they do not need the MLflow server.
+
+## Approach
+
+- **Features only known at pickup.** The model uses pickup zone, drop-off zone and pickup time. Columns such as `trip_distance` or `fare_amount` would predict duration very well, but they are only known after the trip, so using them would be leakage.
+- **Target.** `duration = dropoff − pickup` in minutes. Trips shorter than 3 or longer than 120 minutes are removed as data errors or extreme outliers.
+- **Feature engineering.** Hour, day of week and weekend flag from the pickup time, plus a `route` feature (`pickup_dropoff`). Zone IDs and routes are high-cardinality categories (about 260 zones, tens of thousands of routes), so they are target-encoded instead of one-hot encoded.
+- **One pipeline for training and serving.** Feature engineering, encoding and the model are a single scikit-learn `Pipeline`. The API sends raw inputs to the same pipeline, so training and serving cannot drift apart.
+- **Model registry.** Models are saved with `skops` (safer than pickle) and registered in MLflow. The API always serves the `champion` version, so deploying a better model only requires training it. No code changes are needed.
+
+## Results
+
+Test RMSE (in minutes) from the training script, logged in MLflow. All models use the same features and the same 75/25 split of about 3.3 M trips.
+
+| Model | RMSE (min) | Training time | Model size |
+|---|---|---|---|
+| Linear regression (baseline) | 6.09 | ~16 s | 14 MB |
+| Random forest | 5.22 | ~135 s | 125 MB |
+| **HistGradientBoosting (tuned) ✅ champion** | **5.18** | ~129 s | 24 MB |
+
+### Was the extra complexity worth it?
+
+In the notebook (which used a few extra columns), the models were compared before and after tuning:
+
+| Model | RMSE (min) | vs. baseline |
+|---|---|---|
+| Linear regression (baseline) | 7.91 | – |
+| Random forest | 5.12 | −35.3 % |
+| HistGradientBoosting | 5.06 | −36.0 % |
+| HistGradientBoosting, tuned (RandomizedSearchCV) | 5.04 | −36.3 % |
+
+- **Tree models vs. linear: yes.** They cut the error by more than a third. Travel time depends on combinations like *this route at this hour*, which a linear model cannot capture.
+- **HistGradientBoosting vs. random forest: yes, but not for accuracy.** HGB is only slightly more accurate, but the saved model is about 5× smaller (24 MB vs. 125 MB), which makes it faster to load and serve.
+- **Hyperparameter tuning: barely.** Tuning improved the RMSE by 0.02 minutes (about 1 second per trip) after 45 extra model fits. The default settings were already close to optimal. The real gains came from the features (target-encoded zones and routes, time of day), not from tuning.
+
+## Questions
+
+### 1. What is the RMSE of your final model?
+
+**5.18 minutes** on the test set (tuned HistGradientBoosting, registered model version 3, `champion`).
+On average the prediction is off by about 5 minutes, for trips between 3 and 120 minutes.
+
+### 2. What would you do differently with more time?
+
+- **Time-based validation.** Train on earlier months and test on a later month instead of a random split. That matches how the model is used: predicting future trips.
+- **More data and features.** Use several months to cover seasonality, and add weather, public holidays and special events, which strongly affect traffic.
+- **Deployment.** Package the API and MLflow in Docker and reload the model when the `champion` alias changes, without restarting the API.
