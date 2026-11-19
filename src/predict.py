@@ -32,7 +32,5 @@ def load_model() -> tuple[Pipeline, str]:
 
 def predict(model: Pipeline, trip: dict) -> float:
     X = pd.DataFrame([trip])[FEATURES]
-    X = X.astype({"pulocationid": int, "dolocationid": int})
-    X["tpep_pickup_datetime"] = pd.to_datetime(X["tpep_pickup_datetime"])
     prediction = model.predict(X)[0]
     return float(prediction)

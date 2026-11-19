@@ -1,4 +1,7 @@
+from datetime import datetime
+
 import pandera.pandas as pa
+from pydantic import BaseModel
 
 # Raw-file contract: every column the code reads, checked at load time.
 # Other columns pass through unchecked (strict=False by default).
@@ -14,3 +17,15 @@ TripSchema = pa.DataFrameSchema(
     add_missing_columns=True,  # creates optional columns that are missing
     coerce=True,
 )
+
+
+# validate the request
+class TripFeatures(BaseModel):
+    pulocationid: int
+    dolocationid: int
+    tpep_pickup_datetime: datetime
+
+
+# validate the response
+class DurationPrediction(BaseModel):
+    duration: str
