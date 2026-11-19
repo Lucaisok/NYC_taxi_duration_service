@@ -1,0 +1,49 @@
+# One image for all services: the MLflow server, the API and (on demand) training.
+x-app: &app
+  build: .
+  image: nyc-taxi-duration
+  environment:
+    MLFLOW_TRACKING_URI: http://mlflow:5001
+
+services:
+  mlflow:
+    <<: *app
+    command:
+      - mlflow
+      - server
+      - --backend-store-uri=sqlite:///mlflow.db
+      - --artifacts-destination=./mlartifacts
+      - --host=0.0.0.0
+      - --port=5001
+      - --allowed-hosts=mlflow:*,localhost:*,127.0.0.1:*
+    ports:
+      - "5001:5001"
+    volumes:
+      # runs and models are stored on your machine, not inside the container
+      - ./mlflow.db:/app/mlflow.db
+      - ./mlartifacts:/app/mlartifacts
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5001/health')"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  api:
+    <<: *app
+    ports:
+      - "8000:8000"
+    depends_on:
+      mlflow:
+        condition: service_healthy  # the API loads the model at startup
+
+  # Only runs when called explicitly: docker compose run --rm train
+  train:
+    <<: *app
+    command: ["python", "-m", "src.train", "--model", "hgb"]
+    volumes:
+      - ./data:/app/data  # the parquet file is downloaded once and reused
+      - ./mlartifacts:/app/mlartifacts  # to update mlartifacts/.gitignore on promotion
+    depends_on:
+      mlflow:
+        condition: service_healthy
+    profiles: ["train"]

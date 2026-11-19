@@ -91,6 +91,41 @@ uv run pytest
 
 The API tests replace the MLflow model with a dummy model, so they do not need the MLflow server.
 
+## Run with Docker
+
+Alternative to the steps above: only [Docker Desktop](https://www.docker.com/products/docker-desktop/) is needed, no local Python setup. No cloud account is required; everything runs on your machine.
+
+| File | Purpose |
+|---|---|
+| [Dockerfile](Dockerfile) | Builds one image with Python 3.13, the locked dependencies (`uv.lock`), `src/` and `app/` |
+| [docker-compose.yml](docker-compose.yml) | Runs the `mlflow` server and the `api`; a `train` service runs on demand |
+| [.dockerignore](.dockerignore) | Keeps the virtual environment, data and model files out of the image |
+
+```bash
+# 1. Start MLflow (http://127.0.0.1:5001) and the API (http://127.0.0.1:8000)
+docker compose up --build
+
+# 2. Send a request (in another terminal)
+curl -X POST http://127.0.0.1:8000/predict \
+  -H "Content-Type: application/json" \
+  -d @sample-request.json
+
+# Stop everything
+docker compose down
+```
+
+The image contains only the code. The model comes from the project folder: `mlflow.db` and `mlartifacts/` are mounted into the MLflow container, so runs and models persist after the containers stop and are shared with the non-Docker setup. Stop the local MLflow server first, as both use port 5001.
+
+The champion model is committed to the repository (`mlartifacts/2/models/m-35ed…`, 24 MB), so the API works right after cloning. Other model versions are git-ignored: when a training run promotes a new champion, `src/train.py` rewrites [mlartifacts/.gitignore](mlartifacts/.gitignore) so that only the new champion's files are committed.
+
+To train a new model inside Docker (downloads the data to `data/` and registers the model in MLflow; it becomes champion only if its RMSE is lower):
+
+```bash
+docker compose run --rm train
+```
+
+Training loads about 3.3 M trips into memory. If the `train` container is killed, increase the memory limit in Docker Desktop (Settings → Resources).
+
 ## Approach
 
 - **Features only known at pickup.** The model uses pickup zone, drop-off zone and pickup time. Columns such as `trip_distance` or `fare_amount` would predict duration very well, but they are only known after the trip, so using them would be leakage.
