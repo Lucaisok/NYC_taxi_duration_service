@@ -128,6 +128,6 @@ On average the prediction is off by about 5 minutes, for trips between 3 and 120
 
 ### 2. What would you do differently with more time?
 
-- **Time-based validation.** Train on earlier months and test on a later month instead of a random split. That matches how the model is used: predicting future trips.
 - **More data and features.** Use several months to cover seasonality, and add weather, public holidays and special events, which strongly affect traffic.
-- **Deployment.** Package the API and MLflow in Docker and reload the model when the `champion` alias changes, without restarting the API.
+- **Time-based validation.** Train on earlier months and test on a later month instead of a random split. That matches how the model is used: predicting future trips.
+- **Automated retraining.** Orchestrate the pipeline with Prefect on a monthly schedule: download the newest month, train on a rolling 12-month window, score the challenger and the champion on the same held-out month, promote the better one and have the API reload it without a restart.
