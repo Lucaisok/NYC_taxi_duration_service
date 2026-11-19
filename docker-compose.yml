@@ -35,6 +35,29 @@ services:
     depends_on:
       mlflow:
         condition: service_healthy  # the API loads the model at startup
+    healthcheck:  # healthy = model loaded and the API answers
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/')"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  ui:
+    <<: *app
+    command:
+      - streamlit
+      - run
+      - app/ui.py
+      - --server.port=8501
+      - --server.address=0.0.0.0
+      - --server.headless=true              # a container can't open your browser
+      - --browser.serverAddress=localhost   # print http://localhost:8501, not the container IP
+    environment:
+      API_URL: http://api:8000  # the UI only talks to the API, by its service name
+    ports:
+      - "8501:8501"
+    depends_on:
+      api:
+        condition: service_healthy  # start the UI only when the API can answer
 
   # Only runs when called explicitly: docker compose run --rm train
   train:

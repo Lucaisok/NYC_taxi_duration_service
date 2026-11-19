@@ -19,8 +19,8 @@ app = FastAPI(lifespan=lifespan)
 
 
 @app.get("/")
-def get_root():
-    return {"status": "OK"}
+def get_root(req: Request):
+    return {"status": "OK", "model_version": req.app.state.model_version}
 
 
 @app.post("/predict")

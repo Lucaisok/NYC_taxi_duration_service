@@ -27,7 +27,7 @@ def client(monkeypatch):
 def test_root(client):
     response = client.get("/")
     assert response.status_code == 200
-    assert response.json() == {"status": "OK"}
+    assert response.json() == {"status": "OK", "model_version": "test"}
 
 
 def test_predict_returns_rounded_minutes(client):

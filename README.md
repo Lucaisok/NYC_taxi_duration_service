@@ -2,7 +2,7 @@
 
 Predicts how long a NYC Yellow Taxi trip will take (in minutes) from information known **at pickup time**: pickup zone, drop-off zone and pickup datetime.
 
-The model is trained on the [January 2025 Yellow Taxi data](https://www1.nyc.gov/site/tlc/about/tlc-trip-record-data.page), tracked and versioned in MLflow, and served through a FastAPI app.
+The model is trained on the [January 2025 Yellow Taxi data](https://www1.nyc.gov/site/tlc/about/tlc-trip-record-data.page), tracked and versioned in MLflow, served through a FastAPI app and used through a Streamlit web UI.
 
 ```mermaid
 flowchart LR
@@ -10,14 +10,70 @@ flowchart LR
     B --> C["Train pipeline<br>(src/train.py)"]
     C --> D["MLflow run +<br>model registry"]
     D -->|"champion alias"| E["FastAPI<br>(app/api.py)"]
-    E --> F["curl / requests"]
+    E --> F["Web UI<br>(app/ui.py)"]
 ```
+
+## Quick Start (Docker)
+
+Only [Docker Desktop](https://www.docker.com/products/docker-desktop/) is needed: no Python setup, no cloud account, no training. The trained model is included in the repository.
+
+```bash
+docker compose up --build
+```
+
+When the terminal shows `URL: http://localhost:8501`, open **<http://localhost:8501>** in your browser (a container can't open it for you):
+
+1. Pick the **pickup** and **drop-off** zones (type to search, e.g. "JFK").
+2. Choose the **pickup date and time**.
+3. Click **Estimate duration**. The result shows the trip duration and the estimated arrival time.
+
+Stop everything with `Ctrl+C`, then `docker compose down`.
+
+| Service | URL | What it is |
+|---|---|---|
+| Web UI | <http://localhost:8501> | The app for users |
+| API | <http://127.0.0.1:8000/docs> | FastAPI with interactive docs |
+| MLflow | <http://127.0.0.1:5001> | Experiment runs and model registry |
+
+## Run without Docker
+
+Requires [uv](https://docs.astral.sh/uv/getting-started/installation/) and Python 3.13 (see [`.python-version`](.python-version)). Run all commands from the project root.
+
+```bash
+uv sync
+```
+
+Start the three services, each in its own terminal:
+
+```bash
+uv run mlflow server --backend-store-uri sqlite:///mlflow.db --port 5001   # 1. MLflow
+uv run uvicorn app.api:app --port 8000                                     # 2. API
+uv run streamlit run app/ui.py                                             # 3. Web UI
+```
+
+The browser opens <http://localhost:8501> automatically. Start them in this order: the API loads the champion model from MLflow at startup, and the UI sends its requests to the API (`API_URL`, default `http://127.0.0.1:8000`).
+
+## Train a New Model
+
+Not needed to use the app. Training downloads the data to `data/` on the first run, logs parameters, RMSE and the model to MLflow, and registers a new version of `NYC_taxi_model`.
+
+```bash
+uv run python -m src.train --model hgb    # options: linear, forest, hgb
+docker compose run --rm train             # same, inside Docker (hgb)
+```
+
+If the new model's RMSE is lower than the current champion's, the `champion` alias moves to it, and `src/train.py` rewrites [mlartifacts/.gitignore](mlartifacts/.gitignore) so that only the new champion's files are committed. Restart the API to serve the new model.
+
+Training loads about 3.3 M trips into memory. If the Docker `train` container is killed, increase the memory limit in Docker Desktop (Settings → Resources).
 
 ## Project Structure
 
 | Path | Description |
 |---|---|
-| [notebooks/eda.ipynb](notebooks/eda.ipynb) | EDA, feature exploration, model comparison and hyperparameter tuning |
+| [app/ui.py](app/ui.py) | Streamlit web UI: pick zones and time, get a prediction from the API |
+| [app/taxi_zone_lookup.csv](app/taxi_zone_lookup.csv) | Zone IDs → names (from NYC TLC), used by the UI dropdowns |
+| [.streamlit/config.toml](.streamlit/config.toml) | UI theme (colors, font) and Streamlit settings |
+| [app/api.py](app/api.py) | FastAPI app; loads the champion model once at startup |
 | [src/config.py](src/config.py) | Features, target range, model hyperparameters, MLflow settings |
 | [src/load_data.py](src/load_data.py) | Downloads the parquet file (if missing) and validates it with a pandera schema |
 | [src/preprocess.py](src/preprocess.py) | Builds the `duration` target, removes outliers, train/test split |
@@ -26,105 +82,9 @@ flowchart LR
 | [src/train.py](src/train.py) | Trains a model, logs it to MLflow, promotes it to `champion` if it beats the current one |
 | [src/predict.py](src/predict.py) | Loads the champion model from the registry and makes predictions (shared with the API) |
 | [src/schemas.py](src/schemas.py) | Data schema for the raw file and request/response schemas for the API |
-| [app/api.py](app/api.py) | FastAPI app; loads the model once at startup |
+| [notebooks/eda.ipynb](notebooks/eda.ipynb) | EDA, feature exploration, model comparison and hyperparameter tuning |
 | [tests/](tests/) | Tests for feature engineering, preprocessing and the API |
 | [sample-request.json](sample-request.json) | Example body for the `/predict` endpoint |
-
-## Setup
-
-Requires [uv](https://docs.astral.sh/uv/getting-started/installation/) and Python 3.13 (see [`.python-version`](.python-version)).
-
-```bash
-uv sync
-```
-
-## How to Run
-
-All commands are run from the project root.
-
-### 1. Start the MLflow server
-
-```bash
-uv run mlflow server --backend-store-uri sqlite:///mlflow.db --port 5001
-```
-
-The UI is available at <http://127.0.0.1:5001>. Keep this terminal open: both training and the API talk to this server.
-To use another address, set the `MLFLOW_TRACKING_URI` environment variable.
-
-### 2. Train a model
-
-```bash
-uv run python -m src.train --model hgb      # options: linear, forest, hgb
-```
-
-The data is downloaded to `data/` on the first run. Each run logs parameters, the RMSE and the model to MLflow and registers a new version of `NYC_taxi_model`. If its RMSE is lower than the current champion's, the `champion` alias moves to the new version.
-
-### 3. Start the API
-
-```bash
-uv run uvicorn app.api:app --reload --port 8000
-```
-
-At startup the API loads the model that the `champion` alias points to. Interactive docs are at <http://127.0.0.1:8000/docs>.
-
-### 4. Send a request
-
-```bash
-curl -X POST http://127.0.0.1:8000/predict \
-  -H "Content-Type: application/json" \
-  -d @sample-request.json
-```
-
-Response:
-
-```json
-{"duration": "15 minutes"}
-```
-
-Invalid input (e.g. `"tpep_pickup_datetime": "not-a-date"` or a missing field) returns a `422` error.
-
-### 5. Run the tests
-
-```bash
-uv run pytest
-```
-
-The API tests replace the MLflow model with a dummy model, so they do not need the MLflow server.
-
-## Run with Docker
-
-Alternative to the steps above: only [Docker Desktop](https://www.docker.com/products/docker-desktop/) is needed, no local Python setup. No cloud account is required; everything runs on your machine.
-
-| File | Purpose |
-|---|---|
-| [Dockerfile](Dockerfile) | Builds one image with Python 3.13, the locked dependencies (`uv.lock`), `src/` and `app/` |
-| [docker-compose.yml](docker-compose.yml) | Runs the `mlflow` server and the `api`; a `train` service runs on demand |
-| [.dockerignore](.dockerignore) | Keeps the virtual environment, data and model files out of the image |
-
-```bash
-# 1. Start MLflow (http://127.0.0.1:5001) and the API (http://127.0.0.1:8000)
-docker compose up --build
-
-# 2. Send a request (in another terminal)
-curl -X POST http://127.0.0.1:8000/predict \
-  -H "Content-Type: application/json" \
-  -d @sample-request.json
-
-# Stop everything
-docker compose down
-```
-
-The image contains only the code. The model comes from the project folder: `mlflow.db` and `mlartifacts/` are mounted into the MLflow container, so runs and models persist after the containers stop and are shared with the non-Docker setup. Stop the local MLflow server first, as both use port 5001.
-
-The champion model is committed to the repository (`mlartifacts/2/models/m-35ed…`, 24 MB), so the API works right after cloning. Other model versions are git-ignored: when a training run promotes a new champion, `src/train.py` rewrites [mlartifacts/.gitignore](mlartifacts/.gitignore) so that only the new champion's files are committed.
-
-To train a new model inside Docker (downloads the data to `data/` and registers the model in MLflow; it becomes champion only if its RMSE is lower):
-
-```bash
-docker compose run --rm train
-```
-
-Training loads about 3.3 M trips into memory. If the `train` container is killed, increase the memory limit in Docker Desktop (Settings → Resources).
 
 ## Approach
 

@@ -18,6 +18,7 @@ RUN uv sync --frozen --no-dev
 
 COPY src ./src
 COPY app ./app
+COPY .streamlit ./.streamlit
 
 EXPOSE 8000
 # 0.0.0.0 so the API is reachable from outside the container

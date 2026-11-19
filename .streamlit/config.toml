@@ -1,0 +1,17 @@
+# Streamlit settings for app/ui.py (read from the folder where `streamlit run` is started)
+
+[theme]
+base = "dark"
+primaryColor = "#F5B700"             # taxi yellow: buttons, focus, highlights
+backgroundColor = "#232529"          # page: darkest gray
+secondaryBackgroundColor = "#42444B" # inputs: lighter than the cards (#33353B)
+textColor = "#ECEAE4"
+borderColor = "#4A4C53"
+showWidgetBorder = true
+baseRadius = "12px"
+font = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+
+[browser]
+gatherUsageStats = false
+# Run locally, Streamlit opens the browser automatically.
+# In Docker it can't, so docker-compose.yml sets --server.headless=true instead.
