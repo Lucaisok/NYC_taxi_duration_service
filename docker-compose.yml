@@ -1,7 +1,7 @@
 # One image for all services: the MLflow server, the API and (on demand) training.
 x-app: &app
   build: .
-  image: nyc-taxi-duration
+  image: nyc-trip-duration
   environment:
     MLFLOW_TRACKING_URI: http://mlflow:5001
 
